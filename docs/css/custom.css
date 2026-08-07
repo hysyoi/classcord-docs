@@ -1,0 +1,68 @@
+/* 跟前端 classcord-frontend/src/style.css 對齊的配色：
+   深色模式底色用 --bg-darkest (#202330)，強調色用 --other-color-3 (#25C1A2)。 */
+
+/* 自訂字體：粉圓體（跟前端同一份字體檔），Material 的 Google Fonts 載入已在
+   mkdocs.yml 用 font: false 關掉，改用這裡自己 host 的 woff2。 */
+@font-face {
+  font-family: "JF OpenHuninn";
+  src: url("../assets/fonts/jf-openhuninn-2.1.woff2") format("woff2");
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+:root, [data-md-color-scheme] {
+  --md-text-font: "JF OpenHuninn", "Noto Sans TC", -apple-system, "PingFang TC", sans-serif;
+  --md-code-font: "SFMono-Regular", "Roboto Mono", Menlo, Consolas, monospace;
+}
+
+[data-md-color-scheme="slate"] {
+  --md-hue: 228;
+
+  --md-default-bg-color: #202330;
+  --md-default-bg-color--light: #2b2d31;
+  --md-default-bg-color--lighter: #313338;
+  --md-default-bg-color--lightest: #3a3d44;
+
+  --md-primary-fg-color: #202330;
+  --md-primary-fg-color--light: #2b2d31;
+  --md-primary-fg-color--dark: #17192a;
+  --md-primary-bg-color: #f2f3f5;
+  --md-primary-bg-color--light: #d8dadf;
+
+  --md-accent-fg-color: #25c1a2;
+  --md-accent-fg-color--transparent: #25c1a21a;
+  --md-accent-bg-color: #0b1210;
+
+  --md-typeset-a-color: #25c1a2;
+
+  --md-code-bg-color: #17181f;
+  --md-code-fg-color: #d8dadf;
+
+  /* 字體顏色：深色模式一律用白色 #fff。 */
+  --md-default-fg-color: #fff;
+  --md-default-fg-color--light: #ffffffcc;
+  --md-default-fg-color--lighter: #ffffff80;
+  --md-default-fg-color--lightest: #ffffff1a;
+  --md-typeset-color: #fff;
+}
+
+:root {
+  --md-typeset-a-color: #0b9488;
+}
+
+[data-md-color-scheme="default"] {
+  --md-accent-fg-color: #0b9488;
+  --md-typeset-a-color: #0b9488;
+
+  /* 字體顏色：淺色模式一律用黑色 #000。 */
+  --md-default-fg-color: #000;
+  --md-default-fg-color--light: #000000cc;
+  --md-default-fg-color--lighter: #00000080;
+  --md-default-fg-color--lightest: #0000001a;
+  --md-typeset-color: #000;
+}
+
+/* Footer 版權文字置中（預設是 space-between，沒有社群連結時會貼左）。 */
+.md-footer-meta__inner {
+  justify-content: center;
+}

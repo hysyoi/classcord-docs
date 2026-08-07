@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{# 瀏覽器分頁標題固定用「Classcord 技術文件」，
+   跟 Header／Logo 旁邊顯示的 site_name（技術文件）分開處理。 #}
+{% block htmltitle %}
+  {% if page.meta and page.meta.title %}
+    <title>{{ page.meta.title }}</title>
+  {% elif page.title and not page.is_homepage %}
+    <title>{{ page.title | striptags }} - Classcord 技術文件</title>
+  {% else %}
+    <title>Classcord 技術文件</title>
+  {% endif %}
+{% endblock %}

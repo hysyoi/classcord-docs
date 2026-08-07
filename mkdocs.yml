@@ -1,0 +1,74 @@
+site_name: 技術文件
+site_description: Classcord 後端架構與壓力測試技術文件
+docs_dir: docs
+site_dir: site
+copyright: Copyright &copy; 2026 Classcord (hysyoi). All rights reserved.
+
+theme:
+  name: material
+  language: zh-TW
+  custom_dir: overrides
+  logo: assets/logo.png
+  favicon: assets/favicon.svg
+  font: false
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-night
+        name: 切換成深色模式
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: teal
+      toggle:
+        icon: material/weather-sunny
+        name: 切換成淺色模式
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.tracking
+    - navigation.indexes
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.action.edit
+
+nav:
+  - 架構文件: index.md
+  - 壓力測試報告: loadtest-report.md
+
+markdown_extensions:
+  - toc:
+      permalink: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
+  - tables
+  - fenced_code
+  - admonition
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid-src
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - attr_list
+  - md_in_html
+
+extra_css:
+  - css/custom.css
+
+extra_javascript:
+  - https://unpkg.com/mermaid@9/dist/mermaid.min.js
+  - javascripts/mermaid-init.js
+
+extra:
+  generator: false
+  homepage: https://classcord.hys-lab.com/
