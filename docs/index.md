@@ -56,6 +56,7 @@
 - [10 · Seata 分散式事務](#10--seata-分散式事務)
 - [11 · RabbitMQ：非同步解耦與死信佇列設計](#11--rabbitmq非同步解耦與死信佇列設計)
 - [12 · 資料庫索引設計](#12--資料庫索引設計)
+- [13 · 監控與可觀測性](#13--監控與可觀測性)
 
 ---
 
@@ -67,6 +68,7 @@
 4. **高併發控制：Redis 不只是拿來快取而已** — 用原子鎖、限流計數、引用計數等機制，處理「好幾個請求同時搶著做同一件事」的併發問題：例如同時有兩個人的網路都斷線又重連，要怎麼準確判斷這個人到底在不在線；或是同時兩個請求都想搶著做同一筆初始化。這些機制搭配 Java 21 虛擬執行緒與非同步佇列，是系統能承受同時大量請求的基礎。
 5. **教材上傳到 AI 助教上線，是一條全自動的背景生產線** — 上傳、審核容量、內容切片、向量化、出題、疑問分析，這些比較花時間的工作全部丟到背景處理，使用者不用整個過程都在等待，並且能即時看到進度。
 6. **索引設計跟著實際查詢方法走** — 資料庫的複合索引欄位順序，跟程式裡對應的查詢方法完全一致（先等值篩選、再排序），而不是套用預設值；向量搜尋與 JSON 欄位過濾也各自搭配了對應的索引類型。
+7. **監控指標跟著服務走，也跟著商業問題走** — Prometheus / Grafana 隨三個服務一起遷進 K3s，避免監控體系跟服務本體分處兩個網路互相連不到；除了系統資源指標，另外曝露 AI 預估花費、在線人數、訊息廣播延遲這類直接對應商業問題的自訂指標。
 
 ---
 
@@ -287,8 +289,10 @@ flowchart LR
             GWpod["Gateway Pod<br/>NodePort :30080"]
             MainPod["Main Service Pod"]
             NacosPod["Nacos Pod<br/>(PVC)"]
+            PromPod["Prometheus Pod<br/>(PVC)"]
+            GrafanaPod["Grafana Pod<br/>(PVC)"]
         end
-        Infra["docker-compose 基礎設施<br/>Postgres · Redis · RabbitMQ<br/>Seata · Sentinel Dashboard<br/>Prometheus / Grafana"]
+        Infra["docker-compose 基礎設施<br/>Postgres · Redis · RabbitMQ<br/>Seata · Sentinel Dashboard"]
     end
 
     subgraph D2["Droplet 2 · 1vCPU / 2GB RAM (k3s agent)"]
@@ -296,13 +300,18 @@ flowchart LR
     end
 
     Internet(["Internet"]) --> NG --> GWpod
+    NG --> GrafanaPod
     GWpod --> MainPod
     GWpod -.VPC 內網.-> AIpod
     MainPod --> Infra
     AIpod -.VPC 內網.-> Infra
+    PromPod -. 抓取 /actuator/prometheus .-> GWpod
+    PromPod -. 抓取 /actuator/prometheus .-> MainPod
+    PromPod -. 抓取 /actuator/prometheus .-> AIpod
+    GrafanaPod -- 資料源 --> PromPod
 ```
 
-*圖 3 — 兩台主機的混合部署拓撲*
+*圖 3 — 兩台主機的混合部署拓撲（Prometheus / Grafana 已遷入 K3s，細節見 [13 · 監控與可觀測性](#13--監控與可觀測性)）*
 
 ### nginx：對外的 TLS 終止與反向代理
 
@@ -845,5 +854,19 @@ CREATE INDEX idx_material_chunks_metadata
 
 ---
 
+## 13 · 監控與可觀測性
+
+Prometheus / Grafana 隨三個服務一起遷入 K3s——原本用 Docker Compose 管理，跟遷移後的 Gateway / Main Service / AI Service 不在同一個網路，容器名稱互連失效，因此一併搬進同一個 K3s namespace，靠 CoreDNS 解析。兩者都用本機 PVC 保存歷史資料，Pod 因此跟 [05 · 部署與維運：K3s](#05--部署與維運k3s) 提到的 Nacos 一樣，被 `nodeSelector` 釘死在主機 1。
+
+除了 Actuator 內建的系統資源指標，另外用 Micrometer 曝露幾個貼近商業問題的自訂指標：
+
+| 指標 | 資料來源 | 用途 |
+|---|---|---|
+| `ai.usage.chat.calls` / `embedding.calls` / `cost.usd` / `cost.twd` | 排程定期讀取 [09 · Redis 使用邏輯](#09--redis-使用邏輯) 的每日額度計數器 | 今日 AI 用量與預估花費趨勢 |
+| `presence.online.users` | 直接讀 WebSocket 框架的連線登記表，不查 Redis | 即時在線人數 |
+| `chat.message.broadcast`（依 `outcome`：success / rejected / error） | 聊天訊息廣播的計時器 | 訊息速率與延遲，涵蓋被擋下與失敗的情況 |
+
+---
+
 Classcord Backend · 技術架構文件
-本文件涵蓋：整體架構、K3s 部署、Gateway / Main Service / AI Service 服務深入、Redis 使用邏輯、Seata / RabbitMQ 設計取捨、資料庫索引設計。
+本文件涵蓋：整體架構、K3s 部署、Gateway / Main Service / AI Service 服務深入、Redis 使用邏輯、Seata / RabbitMQ 設計取捨、資料庫索引設計、監控與可觀測性。
