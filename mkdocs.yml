@@ -1,5 +1,6 @@
 site_name: 技術文件
 site_description: Classcord 後端架構與壓力測試技術文件
+site_url: https://classcord-docs.hys-lab.com/
 docs_dir: docs
 site_dir: site
 copyright: Copyright &copy; 2026 Classcord (hysyoi). All rights reserved.
