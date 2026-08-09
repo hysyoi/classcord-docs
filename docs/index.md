@@ -3,7 +3,7 @@
 以「伺服器 ⭢ 頻道」為根基的 Discord 式即時社群互動，結合教材專屬 AI 助教（RAG）。
 後端由 **Gateway + Main Service + AI Service** 三個 Spring Boot 微服務組成，由 Nacos / Sentinel / Seata 統一治理，PostgreSQL + pgvector 與 Redis 支撐資料層，RabbitMQ 負責跨服務與服務內的非同步解耦。
 
-`Java 21` `Spring Boot 3.3` `Spring Cloud (Nacos, Gateway, OpenFeign, Sentinel, Seata)` `Spring AI` `Spring Security` `PostgreSQL + pgvector` `Redis 7` `RabbitMQ` `Docker → K3s` `GitHub Actions` `Backblaze B2` `Flyway`
+`Java 21` `Spring Boot 3.3` `Spring Cloud (Nacos, Gateway, OpenFeign, Sentinel, Seata)` `Spring AI` `Spring Security` `PostgreSQL + pgvector` `Redis 7` `RabbitMQ` `Docker → K3s` `GitHub Actions` `Backblaze B2` `Flyway` `Prometheus + Grafana` `JUnit 5 + Mockito`
 
 > **文件狀態**：涵蓋整體架構、K3s 部署、三個服務的深入實作，以及 Redis / Seata / RabbitMQ 的橫切設計取捨。內容持續調整中。
 
@@ -57,18 +57,18 @@
 - [11 · RabbitMQ：非同步解耦與死信佇列設計](#11--rabbitmq非同步解耦與死信佇列設計)
 - [12 · 資料庫索引設計](#12--資料庫索引設計)
 - [13 · 監控與可觀測性](#13--監控與可觀測性)
+- [14 · 測試策略](#14--測試策略)
 
 ---
 
 ## 00 · 亮點摘要
 
-1. **從一支程式拆成三個服務** — 做 AI 助教功能之後發現，AI 運算（向量化、呼叫大語言模型）特別耗資源、也特別容易出狀況，跟其他功能綁在一起會互相拖累。於是把 AI 相關功能獨立成一個服務，它出問題時不會連累聊天、頻道這些核心功能。
-2. **登入驗證只在大門做一次** — 使用者的「通行證」（JWT）只在 Gateway 這個大門驗證一次，驗證通過才會標記「這是誰」往裡面傳，並且會先清掉外部request可能夾帶的假冒標記，確保後面的服務收到的身份資訊絕對是真的，不用重複驗證。
-3. **兩個服務、兩個資料庫也能「同進退」** — 教材啟用 AI 助教這個動作橫跨兩個服務、各自的資料庫，用 Seata 讓它們像操作同一個資料庫一樣，要嘛都成功、要嘛都復原，不會有「一邊做了、一邊沒做」的中間狀態。
-4. **高併發控制：Redis 不只是拿來快取而已** — 用原子鎖、限流計數、引用計數等機制，處理「好幾個請求同時搶著做同一件事」的併發問題：例如同時有兩個人的網路都斷線又重連，要怎麼準確判斷這個人到底在不在線；或是同時兩個請求都想搶著做同一筆初始化。這些機制搭配 Java 21 虛擬執行緒與非同步佇列，是系統能承受同時大量請求的基礎。
-5. **教材上傳到 AI 助教上線，是一條全自動的背景生產線** — 上傳、審核容量、內容切片、向量化、出題、疑問分析，這些比較花時間的工作全部丟到背景處理，使用者不用整個過程都在等待，並且能即時看到進度。
-6. **索引設計跟著實際查詢方法走** — 資料庫的複合索引欄位順序，跟程式裡對應的查詢方法完全一致（先等值篩選、再排序），而不是套用預設值；向量搜尋與 JSON 欄位過濾也各自搭配了對應的索引類型。
-7. **監控指標跟著服務走，也跟著商業問題走** — Prometheus / Grafana 隨三個服務一起遷進 K3s，避免監控體系跟服務本體分處兩個網路互相連不到；除了系統資源指標，另外曝露 AI 預估花費、在線人數、訊息廣播延遲這類直接對應商業問題的自訂指標。
+1. **RAG 背景生產線** — 上傳、審核容量、內容切片、向量化、出題、疑問分析，這些比較花時間的工作全部丟到背景處理，使用者不用整個過程都在等待，並且能即時看到進度。
+2. **微服務** — 做 AI 助教功能之後發現，AI 運算（向量化、呼叫大語言模型）特別耗資源、也特別容易出狀況，跟其他功能綁在一起會互相拖累。於是把 AI 相關功能獨立成一個服務，它出問題時不會連累聊天、頻道這些核心功能。
+3. **高併發控制：Redis 不只是拿來快取而已** — 用原子鎖、限流計數、引用計數等機制，處理「好幾個請求同時搶著做同一件事」的併發問題：例如同時有兩個人的網路都斷線又重連，要怎麼準確判斷這個人到底在不在線；或是同時兩個請求都想搶著做同一筆初始化。這些機制搭配 Java 21 虛擬執行緒與非同步佇列，是系統能承受同時大量請求的基礎。
+4. **分布式事務** — 教材啟用 AI 助教這個動作橫跨兩個服務、各自的資料庫，用 Seata 讓它們像操作同一個資料庫一樣，要嘛都成功、要嘛都復原，不會有「一邊做了、一邊沒做」的中間狀態。
+5. **資料庫索引優化** — 資料庫的複合索引欄位順序，跟程式裡對應的查詢方法完全一致（先等值篩選、再排序），而不是套用預設值；向量搜尋與 JSON 欄位過濾也各自搭配了對應的索引類型。
+6. **業務導向監控指標** — Prometheus / Grafana 隨三個服務一起遷進 K3s，避免監控體系跟服務本體分處兩個網路互相連不到；除了系統資源指標，另外曝露 AI 預估花費、在線人數、訊息廣播延遲這類直接對應商業問題的自訂指標。
 
 ---
 
@@ -80,7 +80,7 @@
 | **服務治理** | Nacos（服務註冊 / 配置中心）、Sentinel（流量控制與熔斷）、Seata（分散式事務，Redis 儲存模式）、Spring Cloud Gateway、OpenFeign |
 | **資料層** | PostgreSQL 16 + pgvector、Redis 7.2（快取／在線狀態／鎖／限流）、Flyway、Backblaze B2（教材物件儲存） |
 | **非同步 / 即時通訊** | RabbitMQ（含死信佇列 DLX/DLQ）、WebSocket / STOMP、SSE（背景任務進度推播） |
-| **維運 / 部署** | Docker Compose（本機開發）、K3s（正式環境，遷移中）、GitHub Actions CI/CD、Prometheus + Grafana |
+| **維運 / 部署** | Docker Compose（本機開發）、K3s（正式環境）、GitHub Actions CI/CD、Prometheus + Grafana |
 | **AI / 第三方整合** | Gemini（Embedding / Chat / 出題）、pgvector VectorStore（RAG）、OAuth2（Discord / GitHub / Google）、Cloudflare Turnstile |
 
 ---
@@ -88,68 +88,6 @@
 ## 02 · 整體架構
 
 系統由三個獨立部署的 Spring Boot 服務組成：**Gateway**（入口與身份驗證）、**Main Service**（社群互動與教學核心業務）、**AI Service**（AI 索引與推論）。三者之間需要即時回應的呼叫走 OpenFeign 同步溝通，不需要立即處理的工作則透過 RabbitMQ 非同步交派；整體由 Nacos（服務註冊與配置）、Sentinel（流量控制）、Seata（分散式事務）共同治理。
-
-```mermaid
-flowchart TB
-    Client(["Web / Mobile Client"])
-
-    subgraph GW["API Gateway :8080"]
-        Gateway["Spring Cloud Gateway<br/>JWT 集中驗證 · 路由轉發 · Swagger 聚合"]
-    end
-
-    subgraph APP["應用服務層"]
-        direction LR
-        Main["Main Service :8081<br/>Auth · Server/Channel<br/>Message · Presence<br/>Quiz · Material"]
-        AI["AI Service :8082<br/>RAG Indexing<br/>AI Chat · Doubt Analysis"]
-    end
-
-    subgraph MQL["非同步佇列（各服務內部解耦）"]
-        direction LR
-        MainMQ{{"RabbitMQ<br/>訊息落地 · 檔案搬移"}}
-        AIMQ{{"RabbitMQ<br/>RAG 索引處理"}}
-    end
-
-    subgraph GOV["服務治理 (Spring Cloud Alibaba)"]
-        direction LR
-        Nacos["Nacos<br/>服務註冊 / 配置中心"]
-        Sentinel["Sentinel<br/>流量控制"]
-        Seata["Seata<br/>分散式事務"]
-    end
-
-    subgraph DATA["資料層"]
-        direction LR
-        PG[("PostgreSQL<br/>+ pgvector")]
-        Redis[("Redis<br/>Cache / Presence / Lock")]
-        B2[("Backblaze B2<br/>教材原始檔")]
-    end
-
-    Client --> Gateway
-    Gateway --> Main
-    Gateway --> AI
-
-    Main -- "疑問分析請求 (Feign)" --> AI
-    Main -- "出題任務 (RabbitMQ)" --> AI
-    AI -- "教材狀態回報 / 出題結果 (Feign)" --> Main
-
-    Main -.-> MainMQ -.-> Main
-    AI -.-> AIMQ -.-> AI
-
-    Main --> PG
-    Main --> Redis
-    Main --> B2
-    AI --> PG
-    AI --> Redis
-    AI --> B2
-
-    Nacos -.->|服務發現| Gateway
-    Nacos -.->|服務發現| Main
-    Nacos -.->|服務發現| AI
-    Sentinel -.->|限流熔斷| Gateway
-    Seata -.->|全局事務| Main
-    Seata -.->|全局事務| AI
-```
-
-*圖 1 — 服務拓撲與資料流*
 
 ### Gateway :8080
 
@@ -168,7 +106,7 @@ flowchart TB
 
 ### 互動式 C4 Model
 
-上面的服務拓撲圖是聚焦在資料流與治理機制的簡化版本；完整的 C4 Model（Context / Container 層級）另外用 IcePanel 維護，可以互動式展開查看：
+完整的 C4 Model（Context / Container 層級）用 IcePanel 維護，可以互動式展開查看服務拓撲與資料流：
 
 <div style="overflow-x: auto; margin: 1.5rem 0; width: 100%;">
   <iframe src="https://s.icepanel.io/IVhqLydKcwcztz/L4xt" height="800" title="Hyslab Tech's organization - Hyslab Tech's landscape" style="border-radius: 16px; border: none; width: 100%; min-width: 320px; max-width: 1200px; display: block; margin: 0 auto;"></iframe>
@@ -218,7 +156,7 @@ sequenceDiagram
     Note over AI,Main: Seata 全局事務 (@GlobalTransactional)
     AI->>Main: Feign markAsProcessing(materialId)
     Main-->>AI: 200 OK（狀態改為 PROCESSING）
-    AI-)MQ: 事務 Commit 後才發送 RAG_PROCESS 訊息
+    AI-)MQ: 事務 Commit 後<br/>發送 RAG_PROCESS 訊息
     AI-->>U: 202 已受理，背景處理中
     deactivate AI
 
@@ -238,7 +176,7 @@ sequenceDiagram
     deactivate AI
 ```
 
-*圖 2 — 教材向量化時序圖*
+*圖 1 — 教材向量化時序圖*
 
 上面步驟 2 到 3 之間有一個容易被忽略、但很重要的細節，對應的程式碼如下：
 
@@ -270,7 +208,7 @@ public void enableAiAssistant(UUID materialId) {
 
 正式環境需要具備自我修復能力：服務異常時自動重啟，流量增加時自動擴充實例。這是容器編排系統 Kubernetes（此專案採用其輕量版 **K3s**）的核心功能：部署方式、健康檢查、異常時的重啟策略都定義為宣告式設定檔，交由系統自動執行，取代原本需要人工介入的操作。
 
-正式環境跑在兩台雲端主機（DigitalOcean Droplet）上，採**混合部署**：**比較少變動的基礎設施**（資料庫、Redis、訊息佇列等）繼續用原本熟悉的 Docker Compose 手動管理就好，不需要動用到 K8s 這麼重的工具；**自己寫的三個服務（Gateway、Main Service、AI Service）交給 K3s** 管理，換取前面說的「自動重開、方便擴充」的好處。這條路目前還在 `feat/k3s` 分支上進行中。
+正式環境跑在兩台雲端主機（DigitalOcean Droplet）上，採**混合部署**：**比較少變動的基礎設施**（資料庫、Redis、訊息佇列等）繼續用原本熟悉的 Docker Compose 手動管理就好，不需要動用到 K8s 這麼重的工具；**自己寫的三個服務（Gateway、Main Service、AI Service）交給 K3s** 管理，換取前面說的「自動重開、方便擴充」的好處。
 
 ### 叢集拓撲
 
@@ -311,7 +249,7 @@ flowchart LR
     GrafanaPod -- 資料源 --> PromPod
 ```
 
-*圖 3 — 兩台主機的混合部署拓撲（Prometheus / Grafana 已遷入 K3s，細節見 [13 · 監控與可觀測性](#13--監控與可觀測性)）*
+*圖 2 — 兩台主機的混合部署拓撲（Prometheus / Grafana 已遷入 K3s，細節見 [13 · 監控與可觀測性](#13--監控與可觀測性)）*
 
 ### nginx：對外的 TLS 終止與反向代理
 
@@ -868,5 +806,27 @@ Prometheus / Grafana 隨三個服務一起遷入 K3s——原本用 Docker Compo
 
 ---
 
+## 14 · 測試策略
+
+三個服務共 28 個測試類別（17 單元、9 整合、2 應用程式啟動測試），涵蓋 Auth（含三方登入策略）、Presence、Material、Quiz、Message、AI 助教與出題等核心模組。
+
+| 分類 | 使用工具 | 說明 |
+|---|---|---|
+| 單元測試 | JUnit 5 + Mockito | 隔離依賴，驗證單一類別的邏輯分支 |
+| 整合測試 | Spring Boot Test + MockMvc | 接上真實 Redis / PostgreSQL / RabbitMQ（CI 用 Docker Compose 啟動），而非 mock；每個測試包在 `@Transactional` 裡結束後自動 rollback，Redis 另外手動 flush |
+| CI | GitHub Actions（`ci.yml`） | PR 觸發，跑 Spotless 排版檢查與 `mvnw clean verify` |
+
+AI Service 沒有自己的資料庫 schema（表由 Main Service 的 Flyway migration 建立），測試環境另外準備一份獨立的測試用 migration，讓它的整合測試不依賴另一個服務。
+
+| 服務 | 行覆蓋率 |
+|---|---|
+| Main Service | 70.8% |
+| AI Service | 48.3% |
+| Gateway | 53.8%（僅 80 行、3 個類別，樣本數較小） |
+
+測試重心放在權限矩陣、併發鎖、非同步流程這類容易出錯的邏輯。
+
+---
+
 Classcord Backend · 技術架構文件
-本文件涵蓋：整體架構、K3s 部署、Gateway / Main Service / AI Service 服務深入、Redis 使用邏輯、Seata / RabbitMQ 設計取捨、資料庫索引設計、監控與可觀測性。
+本文件涵蓋：整體架構、K3s 部署、Gateway / Main Service / AI Service 服務深入、Redis 使用邏輯、Seata / RabbitMQ 設計取捨、資料庫索引設計、監控與可觀測性、測試策略。
